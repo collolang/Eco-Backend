@@ -22,14 +22,6 @@ frontend shows entirely different data.
 
 ## 🗄️ Database: Supabase PostgreSQL
 
-### Setup Steps
-
-1. Create a free project at [supabase.com](https://supabase.com)
-2. Go to **Project Settings → Database → Connection string**
-3. Copy the **URI** (Transaction mode, port 6543) → `DATABASE_URL`
-4. Copy the **URI** (Session mode, port 5432)      → `DIRECT_URL`
-
----
 
 ## 🚀 Quick Start
 
