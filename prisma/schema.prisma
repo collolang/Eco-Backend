@@ -1,0 +1,164 @@
+// prisma/schema.prisma
+// EcoTrack Multi-Company Schema — PostgreSQL (Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────
+model User {
+  id                String         @id @default(cuid())
+  firstName         String
+  lastName          String
+  email             String         @unique
+  passwordHash      String
+  role              Role           @default(USER)
+  isActive          Boolean        @default(true)
+  failedLoginCount  Int            @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  companies     Company[]
+  refreshTokens RefreshToken[]
+  emissionEntries EmissionEntry[]
+
+  @@map("users")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+// ─────────────────────────────────────────────
+// REFRESH TOKEN
+// ─────────────────────────────────────────────
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────
+// COMPANY  — one user can have MANY companies
+// ─────────────────────────────────────────────
+model Company {
+  id                  String       @id @default(cuid())
+  userId              String                           // owner
+  businessName        String
+  industryType        IndustryType @default(OTHER)
+  location            String?
+  country             String       @default("kenya")
+  numberOfEmployees   Int          @default(1)
+  registrationNumber  String?
+  contactEmail        String?
+  contactPhone        String?
+  businessDescription String?
+  yearEstablished     String?
+  isActive            Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emissionEntries EmissionEntry[]
+
+  @@index([userId])
+  @@map("companies")
+}
+
+enum IndustryType {
+  RETAIL
+  MANUFACTURING
+  TECHNOLOGY
+  HEALTHCARE
+  EDUCATION
+  HOSPITALITY
+  TRANSPORTATION
+  CONSTRUCTION
+  AGRICULTURE
+  ENERGY
+  FINANCIAL_SERVICES
+  CONSULTING
+  REAL_ESTATE
+  MEDIA
+  OTHER
+}
+
+
+// EMISSION ENTRY — scoped to a specific company
+// ─────────────────────────────────────────────
+model EmissionEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  companyId String                              // required — links to specific company
+  month     Int
+  year      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Scope 1 — Direct
+  fuelType     FuelType?
+  fuelQuantity Float?
+
+  // Scope 2 — Purchased electricity
+  electricityKwh Float?
+
+  // Scope 3 — Indirect
+  wasteKg   Float?
+  wasteType WasteType @default(LANDFILL)
+  flightKm  Float?
+
+  // Pre-calculated totals
+  scope1Emissions Float @default(0)
+  scope2Emissions Float @default(0)
+  scope3Emissions Float @default(0)
+  totalEmissions  Float @default(0)
+
+  notes String?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, month, year])   // one entry per company per month/year
+  @@index([userId])
+  @@index([companyId])
+  @@map("emission_entries")
+}
+
+enum FuelType {
+  PETROL
+  DIESEL
+  KEROSENE
+  LNG
+  CNG
+  LPG
+  WOOD
+  COAL
+}
+
+enum WasteType {
+  LANDFILL
+  RECYCLED
+  COMPOSTED
+  INCINERATED
+  HAZARDOUS
+}
