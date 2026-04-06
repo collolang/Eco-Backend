@@ -27,20 +27,13 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-//  CORS 
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',').map(o => o.trim());
-
+// CORS — allow any frontend origin
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: origin ${origin} not allowed`));
-  },
-  credentials:    true,
-  methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  origin: true, // reflect request origin, effectively allowing all origins
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  maxAge:         86400,
+  maxAge: 86400,
 }));
 
 // Trust proxy (needed for correct IP behind Supabase / Railway) 
