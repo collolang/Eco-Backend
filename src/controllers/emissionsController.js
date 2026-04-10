@@ -204,7 +204,7 @@ export const getTotalEmissions = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-//  Yearly comparison (per company) 
+// Yearly comparison (per company) 
 export const getYearlyComparison = async (req, res, next) => {
   try {
     const { companyId } = req.params;
@@ -227,3 +227,107 @@ export const getYearlyComparison = async (req, res, next) => {
     res.json({ success: true, data: formatted });
   } catch (error) { next(error); }
 };
+
+// Get emissions score / green score (per company)
+export const getEmissionsScore = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const { year, month } = req.query;
+
+    const company = await prisma.company.findFirst({
+      where: { id: companyId, userId: req.user.id, isActive: true },
+      select: { numberOfEmployees: true }
+    });
+    if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
+
+    // Build filter for emissions entries
+    const where = { companyId, userId: req.user.id };
+    if (year) where.year = parseInt(year);
+    if (month) where.month = parseInt(month);
+
+    // Aggregate total emissions
+    const totalResult = await prisma.emissionEntry.aggregate({
+      where,
+      _sum: { totalEmissions: true }
+    });
+    const totalEmissions = totalResult._sum.totalEmissions || 0;
+
+    // Calculate green score
+    const { score, description, emissionsPerEmployee } = calculateGreenScore(totalEmissions, company.numberOfEmployees);
+
+    res.json({
+      success: true,
+      data: {
+        score,
+        description,
+        emissionsPerEmployee,
+        totalEmissions,
+        period: year && month ? `${month}/${year}` : year ? `${year}` : 'all-time',
+        employeeCount: company.numberOfEmployees
+      }
+    });
+  } catch (error) { next(error); }
+};
+
+// Predict future yearly emissions using linear regression (per company)
+export const getPrediction = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const targetYear = parseInt(req.query.year);
+    if (!targetYear || targetYear < 2020 || targetYear > 2050) {
+      return res.status(400).json({ success: false, message: 'Valid target year (2020-2050) required' });
+    }
+
+    // Verify company ownership
+    const company = await prisma.company.findFirst({ 
+      where: { id: companyId, userId: req.user.id, isActive: true } 
+    });
+    if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
+
+    // Get last 5 years historical totals (group by year)
+    const history = await prisma.emissionEntry.groupBy({
+      by: ['year'],
+      where: { companyId, userId: req.user.id },
+      _sum: { totalEmissions: true },
+      orderBy: { year: 'desc' },
+      take: 5,
+    });
+
+    if (history.length === 0) {
+      return res.json({ 
+        success: true, 
+        data: { predictedEmissions: 0, confidence: 'low', yearsUsed: [], message: 'No historical data' } 
+      });
+    }
+
+    // Simple linear regression (oldest first)
+    const years = history.map(h => h.year).reverse();
+    const emissions = history.map(h => h._sum.totalEmissions || 0).reverse();
+    const n = years.length;
+
+    const sumX = years.reduce((a, b) => a + b, 0);
+    const sumY = emissions.reduce((a, b) => a + b, 0);
+    const sumXY = years.reduce((sum, x, i) => sum + x * emissions[i], 0);
+    const sumX2 = years.reduce((sum, x) => sum + x * x, 0);
+
+    const slope = n === 1 ? 0 : (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    const predicted = slope * targetYear + intercept;
+
+    const finalPrediction = Math.max(0, Math.round(predicted * 100) / 100);
+
+    res.json({ 
+      success: true, 
+      data: { 
+        predictedEmissions: finalPrediction,
+        confidence: history.length >= 3 ? 'high' : history.length >= 2 ? 'medium' : 'low',
+        targetYear,
+        yearsUsed: years,
+        trend: slope > 0 ? 'increasing' : slope < 0 ? 'decreasing' : 'stable'
+      } 
+    });
+  } catch (error) { next(error); }
+};
+
+
+

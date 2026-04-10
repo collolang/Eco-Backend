@@ -27,9 +27,9 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-// CORS — allow any frontend origin
+// CORS n
 app.use(cors({
-  origin: true, // reflect request origin, effectively allowing all origins
+origin: process.env.FRONTEND_URL || 'https://eco-frontend-eight.vercel.app', // Restrict to EcoTrack frontend only
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

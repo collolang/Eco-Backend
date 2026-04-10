@@ -2,9 +2,12 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import {
-  getAllEntries, getEntryById, createEntry, updateEntry, deleteEntry,
+getAllEntries, getEntryById, createEntry, updateEntry, deleteEntry,
   getMonthlyData, getBreakdownData, getTotalEmissions, getYearlyComparison,
+  getEmissionsScore,
+  getPrediction,
 } from '../controllers/emissionsController.js';
+
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -30,6 +33,10 @@ router.get('/monthly',    getMonthlyData);
 router.get('/breakdown',  getBreakdownData);
 router.get('/total',      getTotalEmissions);
 router.get('/yearly',     getYearlyComparison);
+router.get('/score',      getEmissionsScore);
+router.get('/prediction', getPrediction);
+
+
 
 // CRUD
 router.get('/',           getAllEntries);
