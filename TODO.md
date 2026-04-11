@@ -1,13 +1,9 @@
-# ScoreBadge Fix Task ✅
+# Ecotrack Backend Task: Fix score computation after entry creation
 
-## Plan Steps
-- [x] User approved the edit plan
-- [x] Create TODO.md with steps
-- [x] Edit src/controllers/emissionsController.js: Modified getAllEntries to attach score per entry
-- [x] Verify the edit with read_file
-- [ ] Test the endpoint (suggest npm start and API call)
-- [ ] Complete task with attempt_completion
-
-## Current Step
-Testing suggested...
-
+## Plan Status
+- [x] Diagnose issue: createEntry() lacks score in response
+- [x] Edit src/controllers/emissionsController.js: Add score to createEntry() response
+- [ ] Test POST endpoint
+- [ ] Clean up commented code in getTotalEmissions()
+- [ ] Verify frontend flow
+- [ ] Complete task

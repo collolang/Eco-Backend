@@ -57,7 +57,10 @@ export const createEntry = async (req, res, next) => {
     const { companyId } = req.params;
     const { month, year, electricityKwh, fuelType, fuelQuantity, wasteKg, wasteType, flightKm, notes } = req.body;
 
-    const company = await prisma.company.findFirst({ where: { id: companyId, userId: req.user.id, isActive: true } });
+    const company = await prisma.company.findFirst({ 
+      where: { id: companyId, userId: req.user.id, isActive: true },
+      select: { numberOfEmployees: true, country: true }
+    });
     if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
 
     const calculated = calculateEmissions(
@@ -81,6 +84,10 @@ export const createEntry = async (req, res, next) => {
         ...calculated,
       },
     });
+
+    // Attach score to match getAllEntries() pattern
+    const { score } = calculateGreenScore(entry.totalEmissions || 0, company.numberOfEmployees);
+    entry.score = score;
 
     res.status(201).json({ success: true, message: 'Emission entry created', data: entry });
   } catch (error) {
