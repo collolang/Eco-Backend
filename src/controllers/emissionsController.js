@@ -19,7 +19,10 @@ export const getAllEntries = async (req, res, next) => {
     const { month, year } = req.query;
 
     // Security: verify the company belongs to the user
-    const company = await prisma.company.findFirst({ where: { id: companyId, userId: req.user.id, isActive: true } });
+    const company = await prisma.company.findFirst({ 
+      where: { id: companyId, userId: req.user.id, isActive: true },
+      select: { numberOfEmployees: true }
+    });
     if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
 
     const where = { companyId, userId: req.user.id };
@@ -29,7 +32,13 @@ export const getAllEntries = async (req, res, next) => {
     const entries = await prisma.emissionEntry.findMany({
       where, orderBy: [{ year: 'desc' }, { month: 'desc' }],
     });
-    res.json({ success: true, data: entries });
+
+    const entriesWithScore = entries.map(entry => ({
+      ...entry,
+      score: calculateGreenScore(entry.totalEmissions, company.numberOfEmployees).score
+    }));
+
+    res.json({ success: true, data: entriesWithScore });
   } catch (error) { next(error); }
 };
 
@@ -200,6 +209,35 @@ export const getTotalEmissions = async (req, res, next) => {
       where: { companyId, userId: req.user.id, month: now.getMonth() + 1, year: now.getFullYear() },
       select: { totalEmissions: true },
     });
+// ------------------------------------------------------------
+// const entry = await prisma.emissionEntry.findMany({
+//   where, orderBy: [{ year: 'desc' }, { month: 'desc' }],
+// });
+
+// // get company once
+// const company = await prisma.company.findFirst({
+//   where: { id: companyId },
+//   select: { numberOfEmployees: true }
+// });
+
+// // attach score per entry
+// const entriesWithScore = entries.map(entry => {
+//   const { score } = calculateGreenScore(
+//     entry.totalEmissions,
+//     company.numberOfEmployees
+//   );
+
+//   return {
+//     ...entry,
+//     score
+//   };
+// });
+
+// res.json({ success: true, data: entriesWithScore });
+
+
+
+    // ------------------------------------------------------------------------------------------------------------
     res.json({ success: true, data: entry?.totalEmissions || 0 });
   } catch (error) { next(error); }
 };

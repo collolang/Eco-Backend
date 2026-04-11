@@ -1,12 +1,13 @@
-# EcoTrack Backend - Endpoint Completion TODO
+# ScoreBadge Fix Task ✅
 
-## Task: Implement missing /api/companies/:companyId/emissions/prediction endpoint
+## Plan Steps
+- [x] User approved the edit plan
+- [x] Create TODO.md with steps
+- [x] Edit src/controllers/emissionsController.js: Modified getAllEntries to attach score per entry
+- [x] Verify the edit with read_file
+- [ ] Test the endpoint (suggest npm start and API call)
+- [ ] Complete task with attempt_completion
 
-### Steps:
-- [x] 1. Add `getPrediction` controller function to `src/controllers/emissionsController.js`
-- [x] 2. Update `src/routes/emissions.js`: Add import and route `GET /prediction`
-- [x] 3. Test endpoint (manual: create company/emissions data, GET prediction) ✅ No errors, logic verified
-- [x] 4. Verify all other endpoints exist ✅ (completed analysis)
-- [ ] 5. Complete task
+## Current Step
+Testing suggested...
 
-**Status:** ✅ All endpoints implemented and verified
