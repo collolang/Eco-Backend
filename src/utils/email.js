@@ -72,8 +72,8 @@ export const sendResetEmail = async (email, token) => {
       stack: error.stack?.split('\n').slice(0,3).join('\n')
     });
     // Do not throw here — treat failure as non-fatal so forgot-password returns the generic success response.
-    // return false;
-    throw error;
+     return false;
+    
   }
 };
 
