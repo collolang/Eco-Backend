@@ -1,9 +1,34 @@
 // src/middleware/errorHandler.js
+
+// Helper to set CORS headers explicitly
+const setCorsHeaders = (req, res) => {
+  const origin = process.env.FRONTEND_URL || 'https://eco-frontend-eight.vercel.app';
+  res.set({
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+  });
+};
+
 export const errorHandler = (err, req, res, next) => {
-  console.error('Unhandled error:', err.message || err);
+  console.error('❌ Unhandled error:', {
+    message: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    ip: req.ip,
+  });
+
+  setCorsHeaders(req, res);
 
   if (err.code === 'P2002') {
-    return res.status(409).json({ success: false, message: 'A record with this value already exists', field: err.meta?.target });
+    return res.status(409).json({ 
+      success: false, 
+      message: 'A record with this value already exists', 
+      field: err.meta?.target 
+    });
   }
   if (err.code === 'P2025') {
     return res.status(404).json({ success: false, message: 'Record not found' });
@@ -21,5 +46,9 @@ export const errorHandler = (err, req, res, next) => {
 };
 
 export const notFound = (req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.method} ${req.originalUrl} not found` });
+  setCorsHeaders(req, res);
+  res.status(404).json({ 
+    success: false, 
+    message: `Route ${req.method} ${req.originalUrl} not found` 
+  });
 };
