@@ -163,15 +163,19 @@ export const logout = async (req, res, next) => {
 export const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
+    console.log(`[FORGOT-PASSWORD] Request for email: ${email}`);
     
     // Find user silently (no existence leak)
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() }
     });
+    console.log(`[FORGOT-PASSWORD] User found: ${!!user}, ID: ${user?.id || 'none'}`);
 
     if (user) {
       // Generate raw token
       const rawToken = generateResetToken();
+      console.log(`[FORGOT-PASSWORD] Generated rawToken (first 10 chars): ${rawToken.slice(0,10)}...`);
+      
       const hashedToken = hashToken(rawToken);
       const expiry = new Date(Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
       
@@ -183,9 +187,14 @@ export const forgotPassword = async (req, res, next) => {
           reset_token_expiry: expiry,
         },
       });
+      console.log(`[FORGOT-PASSWORD] Token stored in DB for user ${user.id}`);
       
       // Send email with RAW token
+      console.log(`[FORGOT-PASSWORD] Attempting to send email to ${email}`);
       await sendResetEmail(email, rawToken);
+      console.log(`[FORGOT-PASSWORD] Email sent successfully to ${email}`);
+    } else {
+      console.log(`[FORGOT-PASSWORD] No user found for ${email} (normal, generic response)`);
     }
     
     // Generic response - security: never reveal email exists
@@ -195,14 +204,22 @@ export const forgotPassword = async (req, res, next) => {
     });
     
   } catch (error) {
-    console.error('Forgot password error:', error);
-    // Generic error too
+    console.error('[FORGOT-PASSWORD] ERROR details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack?.split('\n').slice(0,3).join('\n'),
+      email: req.body.email,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Generic error too - but now logs full details
     res.status(500).json({
       success: false,
       message: 'Request processed. Check your email if applicable.'
     });
   }
 };
+
 
 // Reset Password
 export const resetPassword = async (req, res, next) => {
