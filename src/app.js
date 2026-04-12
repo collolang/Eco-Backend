@@ -65,6 +65,13 @@ app.use('/api/auth/register', authLimiter);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
+// Environment validation & logging (helps debug Render deploys)
+console.log('🌿 Environment check:');
+console.log(`   FRONTEND_URL: ${process.env.FRONTEND_URL || 'MISSING - using fallback'}`);
+console.log(`   EMAIL_HOST: ${process.env.EMAIL_HOST ? 'SET' : 'MISSING'}`);
+console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+console.log('');
+
 // Logging 
 if (process.env.NODE_ENV !== 'test') {
   app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
@@ -78,6 +85,9 @@ app.get('/health', (_req, res) => res.json({
   environment: process.env.NODE_ENV || 'development',
   version:     '2.0.0',
 }));
+
+// Explicit OPTIONS preflight for auth (extra safety for Render cold starts)
+app.options('/api/auth/forgot-password', cors());
 
 // API Routes 
 // Auth
