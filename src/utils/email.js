@@ -38,7 +38,7 @@ export const sendResetEmail = async (email, token) => {
   console.log(`[EMAIL] Generated resetUrl: ${resetUrl}`);
 
   const mailOptions = {
-    from: `"EcoTrack" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`,
+    from: `"EcoTrack" <${process.env.EMAIL_USER || 'ecotrack549@gmail.com'}>`,
     to: email,
     subject: 'Reset Your EcoTrack Password',
     html: `
