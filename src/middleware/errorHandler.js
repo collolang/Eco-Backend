@@ -1,8 +1,10 @@
 // src/middleware/errorHandler.js
 
-// Helper to set CORS headers explicitly
+// Helper to set CORS headers explicitly (reflect incoming origin when allowed)
 const setCorsHeaders = (req, res) => {
-  const origin = process.env.FRONTEND_URL || 'https://eco-frontend-eight.vercel.app';
+  const allowed = [process.env.FRONTEND_URL, 'https://eco-frontend-eight.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000'].filter(Boolean);
+  const incoming = req.headers.origin;
+  const origin = incoming && allowed.includes(incoming) ? incoming : (process.env.FRONTEND_URL || 'https://eco-frontend-eight.vercel.app');
   res.set({
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Credentials': 'true',

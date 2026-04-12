@@ -27,14 +27,22 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-// CORS n
-app.use(cors({
-origin: process.env.FRONTEND_URL || 'https://eco-frontend-eight.vercel.app', // Restrict to EcoTrack frontend only
+// CORS - allow configured frontend + common dev origins
+const allowedOrigins = [process.env.FRONTEND_URL, 'https://eco-frontend-eight.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000'].filter(Boolean);
+const corsOptions = {
+  origin: (origin, callback) => {
+    // allow requests with no origin (curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   maxAge: 86400,
-}));
+};
+
+app.use(cors(corsOptions));
 
 // Trust proxy (needed for correct IP behind Supabase / Railway) 
 app.set('trust proxy', 1);
@@ -86,8 +94,8 @@ app.get('/health', (_req, res) => res.json({
   version:     '2.0.0',
 }));
 
-// Explicit OPTIONS preflight for auth (extra safety for Render cold starts)
-app.options('/api/auth/forgot-password', cors());
+// Explicit OPTIONS preflight for API routes (extra safety for Render cold starts)
+app.options('/api/*', cors(corsOptions));
 
 // API Routes 
 // Auth
