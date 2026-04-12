@@ -1,11 +1,24 @@
 // src/controllers/authController.js
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import prisma from '../config/database.js';
 import { jwtConfig } from '../config/jwt.js';
+import { sendResetEmail } from '../utils/email.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MS    = 15 * 60 * 1000; // 15 minutes
+const RESET_TOKEN_EXPIRY_MINUTES = 15;
+
+// Generate secure 64-char hex token
+function generateResetToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// SHA256 hash token
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
 
 function generateAccessToken(userId, role) {
   return jwt.sign({ userId, role }, jwtConfig.secret, { expiresIn: jwtConfig.expiresIn });
@@ -144,6 +157,109 @@ export const logout = async (req, res, next) => {
     if (token) await prisma.refreshToken.deleteMany({ where: { token } });
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) { next(error); }
+};
+
+// Forgot Password - Generic response always
+export const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    
+    // Find user silently (no existence leak)
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() }
+    });
+
+    if (user) {
+      // Generate raw token
+      const rawToken = generateResetToken();
+      const hashedToken = hashToken(rawToken);
+      const expiry = new Date(Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+      
+      // Store hashed token + expiry (one-time use)
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          reset_token: hashedToken,
+          reset_token_expiry: expiry,
+        },
+      });
+      
+      // Send email with RAW token
+      await sendResetEmail(email, rawToken);
+    }
+    
+    // Generic response - security: never reveal email exists
+    res.json({
+      success: true,
+      message: 'If an account exists for this email, check your inbox for reset instructions (expires in 15 minutes).'
+    });
+    
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    // Generic error too
+    res.status(500).json({
+      success: false,
+      message: 'Request processed. Check your email if applicable.'
+    });
+  }
+};
+
+// Reset Password
+export const resetPassword = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reset token required'
+      });
+    }
+    
+    // Hash incoming raw token
+    const hashedToken = hashToken(token);
+    
+    // Find valid reset token
+    const user = await prisma.user.findFirst({
+      where: {
+        reset_token: hashedToken,
+        reset_token_expiry: { gt: new Date() }, // not expired
+      },
+    });
+    
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
+      });
+    }
+    
+    // Hash new password (same strength as register/login)
+    const newPasswordHash = await bcrypt.hash(password, 12);
+    
+    // Update password + clear token (one-time use)
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: newPasswordHash,
+        reset_token: null,
+        reset_token_expiry: null,
+      },
+    });
+    
+    res.json({
+      success: true,
+      message: 'Password reset successful. Please login with your new password.'
+    });
+    
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Reset failed. Please request a new reset link.'
+    });
+  }
 };
 
 //  Get me
