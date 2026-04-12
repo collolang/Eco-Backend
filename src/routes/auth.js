@@ -14,7 +14,7 @@ router.post('/register',
     body('lastName').trim().notEmpty().withMessage('Last name is required').isLength({ max: 100 }),
     body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 8, max: 128 }).withMessage('Password must be 8–128 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)/).withMessage('Password must include uppercase, lowercase, and a number'),
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must include uppercase, lowercase, and a number'),
   ],
   validate, register
 );
