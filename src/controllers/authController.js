@@ -262,7 +262,6 @@ export const forgotPasswordQuestions = async (req, res) => {
     });
 
     if (!user || !user.hasSecurityQuestions || user.securityQuestions.length !== 3) {
-      resetSecurityQuestionAttempts(email);
       return res.status(200).json({
         success: true,
         message: 'If an account exists and has security questions set up, you can continue with recovery.',
@@ -270,7 +269,6 @@ export const forgotPasswordQuestions = async (req, res) => {
     }
 
     const questionList = user.securityQuestions.map((item) => item.question);
-    resetSecurityQuestionAttempts(email);
     return res.json({
       success: true,
       data: { questions: questionList },
