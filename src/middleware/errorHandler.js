@@ -6,7 +6,7 @@ const setCorsHeaders = (req, res) => {
     .filter(Boolean)
     .map((origin) => origin.replace(/\/$/, ''));
   const incoming = req.headers.origin;
-  const configuredOrigin = (process.env.FRONTEND_URL || 'https://eco-frontend-eight.vercel.app').replace(/\/$/, '');
+  const configuredOrigin = (process.env.FRONTEND_URL || 'https://ecotrack-nu-seven.vercel.app').replace(/\/$/, '');
   const origin = incoming && allowed.includes(incoming) ? incoming : configuredOrigin;
   res.set({
     'Access-Control-Allow-Origin': origin,
