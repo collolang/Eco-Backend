@@ -3,6 +3,21 @@ import jwt from 'jsonwebtoken';
 import { jwtConfig } from '../config/jwt.js';
 import prisma from '../config/database.js';
 
+// Tiny in-memory TTL cache to reduce DB calls on every request.
+// Note: works best for single-process deployments.
+const userCache = new Map();
+const USER_CACHE_TTL_MS = parseInt(process.env.USER_CACHE_TTL_MS) || 30_000; // 30s
+
+function getCachedUser(userId) {
+  const entry = userCache.get(userId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    userCache.delete(userId);
+    return null;
+  }
+  return entry.user;
+}
+
 export const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -21,13 +36,20 @@ export const authenticate = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Invalid access token' });
     }
 
-    const user = await prisma.user.findUnique({
+    const cachedUser = getCachedUser(decoded.userId);
+    const user = cachedUser || await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: { id: true, email: true, role: true, isActive: true, lockedUntil: true },
     });
 
     if (!user || !user.isActive) {
+      userCache.delete(decoded.userId);
       return res.status(401).json({ success: false, message: 'User account inactive or not found' });
+    }
+
+    // Refresh cache with the latest data for active users
+    if (!cachedUser) {
+      userCache.set(decoded.userId, { user, expiresAt: Date.now() + USER_CACHE_TTL_MS });
     }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {

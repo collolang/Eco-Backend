@@ -1,82 +1,149 @@
 // src/controllers/authController.js
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
 import prisma from '../config/database.js';
 import { jwtConfig } from '../config/jwt.js';
-import { sendResetEmail } from '../utils/email.js';
+import { normalizeSecurityAnswer } from '../utils/securityQuestions.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
-const LOCK_DURATION_MS    = 15 * 60 * 1000; // 15 minutes
-const RESET_TOKEN_EXPIRY_MINUTES = 15;
-
-// Generate secure 64-char hex token
-function generateResetToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-// SHA256 hash token
-function hashToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
+const LOCK_DURATION_MS = 15 * 60 * 1000;
+const SECURITY_QUESTION_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const SECURITY_QUESTION_RATE_LIMIT_MAX = 5;
+const SECURITY_QUESTION_FAILURE_DELAY_MS = 750;
+const SECURITY_QUESTION_LOCKOUT_MS = 60 * 1000;
+const questionAttemptStore = new Map();
 
 function generateAccessToken(userId, role) {
   return jwt.sign({ userId, role }, jwtConfig.secret, { expiresIn: jwtConfig.expiresIn });
 }
+
 function generateRefreshToken(userId) {
   return jwt.sign({ userId }, jwtConfig.refreshSecret, { expiresIn: jwtConfig.refreshExpiresIn });
 }
+
 function getRefreshExpiry() {
   const days = parseInt(jwtConfig.refreshExpiresIn) || 7;
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 }
 
-//  Register 
+function normalizeEmail(email) {
+  return String(email ?? '').trim().toLowerCase();
+}
+
+function getQuestionAttemptState(email) {
+  const normalizedEmail = normalizeEmail(email);
+  const now = Date.now();
+  const existing = questionAttemptStore.get(normalizedEmail);
+
+  if (!existing || now - existing.windowStart > SECURITY_QUESTION_RATE_LIMIT_WINDOW_MS) {
+    const nextState = {
+      windowStart: now,
+      attempts: 0,
+      lockUntil: null,
+    };
+    questionAttemptStore.set(normalizedEmail, nextState);
+    return nextState;
+  }
+
+  return existing;
+}
+
+function applySecurityQuestionRateLimit(email) {
+  const state = getQuestionAttemptState(email);
+  const now = Date.now();
+
+  if (state.lockUntil && state.lockUntil > now) {
+    return {
+      allowed: false,
+      retryAfterMs: state.lockUntil - now,
+    };
+  }
+
+  if (state.attempts >= SECURITY_QUESTION_RATE_LIMIT_MAX) {
+    state.lockUntil = now + SECURITY_QUESTION_LOCKOUT_MS;
+    state.attempts = 0;
+    return {
+      allowed: false,
+      retryAfterMs: SECURITY_QUESTION_LOCKOUT_MS,
+    };
+  }
+
+  state.attempts += 1;
+  return { allowed: true };
+}
+
+function resetSecurityQuestionAttempts(email) {
+  questionAttemptStore.delete(normalizeEmail(email));
+}
+
+async function delaySecurityFailure() {
+  await new Promise((resolve) => setTimeout(resolve, SECURITY_QUESTION_FAILURE_DELAY_MS));
+}
+
+function logSecurityQuestionFailure(email) {
+  console.warn('[SECURITY-QUESTION-RECOVERY] Failed attempt logged:', {
+    email: normalizeEmail(email),
+    timestamp: new Date().toISOString(),
+  });
+}
+
+// Register
 export const register = async (req, res, next) => {
   try {
     const { firstName, lastName, email, password } = req.body;
 
-    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const existing = await prisma.user.findUnique({ where: { email: normalizeEmail(email) } });
     if (existing) {
       return res.status(409).json({ success: false, message: 'An account with this email already exists' });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
-      data: { firstName: firstName.trim(), lastName: lastName.trim(), email: email.toLowerCase(), passwordHash },
+      data: {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: normalizeEmail(email),
+        passwordHash,
+      },
       select: { id: true, firstName: true, lastName: true, email: true, role: true },
     });
 
-    const accessToken  = generateAccessToken(user.id, user.role);
+    const accessToken = generateAccessToken(user.id, user.role);
     const refreshToken = generateRefreshToken(user.id);
     await prisma.refreshToken.create({
-      data: { token: refreshToken, userId: user.id, expiresAt: getRefreshExpiry(),
-              userAgent: req.headers['user-agent'], ipAddress: req.ip },
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: getRefreshExpiry(),
+        userAgent: req.headers['user-agent'],
+        ipAddress: req.ip,
+      },
     });
 
     res.status(201).json({
-      success: true, message: 'Account created successfully',
+      success: true,
+      message: 'Account created successfully',
       data: { user, accessToken, refreshToken },
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
-// Login 
+// Login
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizeEmail(email) },
       include: { companies: { where: { isActive: true }, orderBy: { createdAt: 'asc' } } },
     });
 
-    // Generic error to prevent email enumeration
     const INVALID = { success: false, message: 'Invalid email or password' };
 
     if (!user || !user.isActive) return res.status(401).json(INVALID);
 
-    // Brute-force protection
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       const minutes = Math.ceil((user.lockedUntil - Date.now()) / 60000);
       return res.status(403).json({ success: false, message: `Account locked. Try again in ${minutes} minute(s).` });
@@ -95,36 +162,46 @@ export const login = async (req, res, next) => {
       return res.status(401).json(INVALID);
     }
 
-    // Reset failed counter on success
     await prisma.user.update({
       where: { id: user.id },
       data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
 
-    const accessToken  = generateAccessToken(user.id, user.role);
+    const accessToken = generateAccessToken(user.id, user.role);
     const refreshToken = generateRefreshToken(user.id);
     await prisma.refreshToken.create({
-      data: { token: refreshToken, userId: user.id, expiresAt: getRefreshExpiry(),
-              userAgent: req.headers['user-agent'], ipAddress: req.ip },
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: getRefreshExpiry(),
+        userAgent: req.headers['user-agent'],
+        ipAddress: req.ip,
+      },
     });
 
     const { passwordHash, failedLoginCount, lockedUntil, ...safeUser } = user;
     res.json({
-      success: true, message: 'Login successful',
+      success: true,
+      message: 'Login successful',
       data: { user: safeUser, accessToken, refreshToken, companies: user.companies },
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
-//  Refresh Token 
+// Refresh token
 export const refreshToken = async (req, res, next) => {
   try {
     const { refreshToken: token } = req.body;
     if (!token) return res.status(401).json({ success: false, message: 'Refresh token required' });
 
     let decoded;
-    try { decoded = jwt.verify(token, jwtConfig.refreshSecret); }
-    catch { return res.status(401).json({ success: false, message: 'Invalid refresh token' }); }
+    try {
+      decoded = jwt.verify(token, jwtConfig.refreshSecret);
+    } catch {
+      return res.status(401).json({ success: false, message: 'Invalid refresh token' });
+    }
 
     const stored = await prisma.refreshToken.findUnique({ where: { token } });
     if (!stored || stored.expiresAt < new Date()) {
@@ -137,158 +214,177 @@ export const refreshToken = async (req, res, next) => {
     });
     if (!user?.isActive) return res.status(401).json({ success: false, message: 'User not found' });
 
-    // Rotate tokens
     await prisma.refreshToken.delete({ where: { token } });
-    const newAccess  = generateAccessToken(user.id, user.role);
+    const newAccess = generateAccessToken(user.id, user.role);
     const newRefresh = generateRefreshToken(user.id);
     await prisma.refreshToken.create({
-      data: { token: newRefresh, userId: user.id, expiresAt: getRefreshExpiry(),
-              userAgent: req.headers['user-agent'], ipAddress: req.ip },
+      data: {
+        token: newRefresh,
+        userId: user.id,
+        expiresAt: getRefreshExpiry(),
+        userAgent: req.headers['user-agent'],
+        ipAddress: req.ip,
+      },
     });
 
     res.json({ success: true, data: { accessToken: newAccess, refreshToken: newRefresh } });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
-//  Logout 
-export const logout = async (req, res, next) => {
+// Logout
+export const logout = async (_req, res, next) => {
   try {
-    const { refreshToken: token } = req.body;
+    const { refreshToken: token } = _req.body;
     if (token) await prisma.refreshToken.deleteMany({ where: { token } });
     res.json({ success: true, message: 'Logged out successfully' });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };
 
-// Forgot Password - Generic response always
-export const forgotPassword = async (req, res, next) => {
+export const forgotPasswordQuestions = async (req, res) => {
   try {
-    const { email } = req.body;
-    console.log(`[FORGOT-PASSWORD] Request for email: ${email}`);
-    
-    // Find user silently (no existence leak)
+    const email = normalizeEmail(req.body.email);
+    const rateLimitResult = applySecurityQuestionRateLimit(email);
+
+    if (!rateLimitResult.allowed) {
+      return res.status(429).json({
+        success: false,
+        message: `Too many recovery attempts. Please try again in ${Math.ceil(rateLimitResult.retryAfterMs / 1000)} seconds.`,
+      });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
+      where: { email },
+      include: { securityQuestions: { orderBy: { createdAt: 'asc' } } },
     });
-    console.log(`[FORGOT-PASSWORD] User found: ${!!user}, ID: ${user?.id || 'none'}`);
 
-    if (user) {
-      // Generate raw token
-      const rawToken = generateResetToken();
-      console.log(`[FORGOT-PASSWORD] Generated rawToken (first 10 chars): ${rawToken.slice(0,10)}...`);
-      
-      const hashedToken = hashToken(rawToken);
-      const expiry = new Date(Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
-      
-      // Store hashed token + expiry (one-time use)
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          reset_token: hashedToken,
-          reset_token_expiry: expiry,
-        },
+    if (!user || !user.hasSecurityQuestions || user.securityQuestions.length !== 3) {
+      resetSecurityQuestionAttempts(email);
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists and has security questions set up, you can continue with recovery.',
       });
-      console.log(`[FORGOT-PASSWORD] Token stored in DB for user ${user.id}`);
-      
-      // Send email with RAW token
-      console.log(`[FORGOT-PASSWORD] Attempting to send email to ${email}`);
-      await sendResetEmail(email, rawToken);
-      console.log(`[FORGOT-PASSWORD] Email sent successfully to ${email}`);
-    } else {
-      console.log(`[FORGOT-PASSWORD] No user found for ${email} (normal, generic response)`);
     }
-    
-    // Generic response - security: never reveal email exists
-    res.json({
+
+    const questionList = user.securityQuestions.map((item) => item.question);
+    resetSecurityQuestionAttempts(email);
+    return res.json({
       success: true,
-      message: 'If an account exists for this email, check your inbox for reset instructions (expires in 15 minutes).'
+      data: { questions: questionList },
     });
-    
   } catch (error) {
-    console.error('[FORGOT-PASSWORD] ERROR details:', {
-      message: error.message,
-      code: error.code,
-      stack: error.stack?.split('\n').slice(0,3).join('\n'),
-      email: req.body.email,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Generic error too - but now logs full details
-    res.status(500).json({
+    console.error('Forgot password questions error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Request processed. Check your email if applicable.'
+      message: 'Unable to process your recovery request right now.',
     });
   }
 };
 
-
-// Reset Password
-export const resetPassword = async (req, res, next) => {
+export const resetPasswordQuestions = async (req, res) => {
   try {
-    const { token } = req.params;
-    const { password } = req.body;
-    
-    if (!token) {
-      return res.status(400).json({
+    const email = normalizeEmail(req.body.email);
+    const rateLimitResult = applySecurityQuestionRateLimit(email);
+
+    if (!rateLimitResult.allowed) {
+      return res.status(429).json({
         success: false,
-        message: 'Reset token required'
+        message: `Too many recovery attempts. Please try again in ${Math.ceil(rateLimitResult.retryAfterMs / 1000)} seconds.`,
       });
     }
-    
-    // Hash incoming raw token
-    const hashedToken = hashToken(token);
-    
-    // Find valid reset token
-    const user = await prisma.user.findFirst({
-      where: {
-        reset_token: hashedToken,
-        reset_token_expiry: { gt: new Date() }, // not expired
-      },
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { securityQuestions: { orderBy: { createdAt: 'asc' } } },
     });
-    
-    if (!user) {
-      return res.status(400).json({
+
+    if (!user || !user.hasSecurityQuestions || user.securityQuestions.length !== 3) {
+      logSecurityQuestionFailure(email);
+      await delaySecurityFailure();
+      return res.status(200).json({
         success: false,
-        message: 'Invalid or expired reset token'
+        message: 'One or more answers are incorrect.',
       });
     }
-    
-    // Hash new password (same strength as register/login)
-    const newPasswordHash = await bcrypt.hash(password, 12);
-    
-    // Update password + clear token (one-time use)
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash: newPasswordHash,
-        reset_token: null,
-        reset_token_expiry: null,
-      },
+
+    const submittedAnswers = Array.isArray(req.body.answers) ? req.body.answers : [];
+    if (submittedAnswers.length !== 3) {
+      logSecurityQuestionFailure(email);
+      await delaySecurityFailure();
+      return res.status(200).json({
+        success: false,
+        message: 'One or more answers are incorrect.',
+      });
+    }
+
+    const storedAnswerHashes = user.securityQuestions.map((entry) => entry.answer);
+    const normalizedAnswers = submittedAnswers.map((answer) => normalizeSecurityAnswer(answer));
+
+    const correctMatches = await Promise.all(
+      normalizedAnswers.map(async (answer, index) => {
+        const targetHash = storedAnswerHashes[index];
+        if (!targetHash) return false;
+        return bcrypt.compare(answer, targetHash);
+      })
+    );
+
+    const allAnswersCorrect = correctMatches.every(Boolean) && normalizedAnswers.length === 3;
+
+    if (!allAnswersCorrect) {
+      logSecurityQuestionFailure(email);
+      await delaySecurityFailure();
+      return res.status(200).json({
+        success: false,
+        message: 'One or more answers are incorrect.',
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(req.body.newPassword, 12);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { passwordHash },
+      });
+
+      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
     });
-    
-    res.json({
+
+    resetSecurityQuestionAttempts(email);
+    return res.json({
       success: true,
-      message: 'Password reset successful. Please login with your new password.'
+      message: 'Password reset successful. Please log in with your new password.',
     });
-    
   } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({
+    console.error('Reset password with questions error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Reset failed. Please request a new reset link.'
+      message: 'Unable to reset the password right now.',
     });
   }
 };
 
-//  Get me
+// Get me
 export const getMe = async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: {
-        id: true, firstName: true, lastName: true, email: true, role: true, createdAt: true,
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        hasSecurityQuestions: true,
         companies: { where: { isActive: true }, orderBy: { createdAt: 'asc' } },
       },
     });
     res.json({ success: true, data: { user } });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 };

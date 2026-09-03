@@ -1,8 +1,15 @@
 // src/routes/auth.js
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { register, login, refreshToken, logout, getMe, forgotPassword, resetPassword } from '../controllers/authController.js';
-import rateLimit from 'express-rate-limit';
+import {
+  register,
+  login,
+  refreshToken,
+  logout,
+  getMe,
+  forgotPasswordQuestions,
+  resetPasswordQuestions,
+} from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -32,32 +39,23 @@ router.post('/refresh',
   validate, refreshToken
 );
 
-// Forgot Password - Rate limited, generic response
-const forgotPasswordLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requests per windowMs per IP
-  message: { success: false, message: 'Too many forgot-password requests, try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-router.post('/forgot-password',
+router.post('/forgot-password/questions',
   [
     body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   ],
   validate,
-  forgotPasswordLimiter,
-  forgotPassword
+  forgotPasswordQuestions
 );
 
-// Reset Password
-router.post('/reset-password/:token',
+router.post('/reset-password/questions',
   [
-    body('password').isLength({ min: 8, max: 128 }).withMessage('Password must be 8–128 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)/).withMessage('Password must include uppercase, lowercase, and a number'),
+    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+    body('answers').isArray({ min: 3, max: 3 }).withMessage('Three security answers are required'),
+    body('newPassword').isLength({ min: 8, max: 128 }).withMessage('Password must be 8–128 characters')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must include uppercase, lowercase, and a number'),
   ],
   validate,
-  resetPassword
+  resetPasswordQuestions
 );
 
 router.post('/logout', logout);

@@ -19,9 +19,9 @@ export const getAllEntries = async (req, res, next) => {
     const { month, year } = req.query;
 
     // Security: verify the company belongs to the user
-    const company = await prisma.company.findFirst({ 
+    const company = await prisma.company.findFirst({
       where: { id: companyId, userId: req.user.id, isActive: true },
-      select: { numberOfEmployees: true }
+      select: { numberOfEmployees: true },
     });
     if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
 
@@ -159,8 +159,10 @@ export const getMonthlyData = async (req, res, next) => {
       select: { month: true, totalEmissions: true, scope1Emissions: true, scope2Emissions: true, scope3Emissions: true },
     });
 
+    const byMonth = new Map(entries.map((e) => [e.month, e]));
+
     const monthly = Array.from({ length: 12 }, (_, i) => {
-      const found = entries.find((e) => e.month === i + 1);
+      const found = byMonth.get(i + 1);
       return {
         month:     MONTH_NAMES[i],
         emissions: found?.totalEmissions  || 0,
@@ -179,7 +181,10 @@ export const getMonthlyData = async (req, res, next) => {
 export const getBreakdownData = async (req, res, next) => {
   try {
     const { companyId } = req.params;
-    const company = await prisma.company.findFirst({ where: { id: companyId, userId: req.user.id, isActive: true } });
+    const company = await prisma.company.findFirst({
+      where: { id: companyId, userId: req.user.id, isActive: true },
+      select: { numberOfEmployees: true },
+    });
     if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
 
     const year  = parseInt(req.query.year)  || new Date().getFullYear();
@@ -208,7 +213,10 @@ export const getBreakdownData = async (req, res, next) => {
 export const getTotalEmissions = async (req, res, next) => {
   try {
     const { companyId } = req.params;
-    const company = await prisma.company.findFirst({ where: { id: companyId, userId: req.user.id, isActive: true } });
+    const company = await prisma.company.findFirst({
+      where: { id: companyId, userId: req.user.id, isActive: true },
+      select: { numberOfEmployees: true },
+    });
     if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
 
     const now = new Date();
@@ -324,8 +332,9 @@ export const getPrediction = async (req, res, next) => {
     }
 
     // Verify company ownership
-    const company = await prisma.company.findFirst({ 
-      where: { id: companyId, userId: req.user.id, isActive: true } 
+    const company = await prisma.company.findFirst({
+      where: { id: companyId, userId: req.user.id, isActive: true },
+      select: { numberOfEmployees: true },
     });
     if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
 

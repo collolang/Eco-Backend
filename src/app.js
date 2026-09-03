@@ -7,6 +7,7 @@ import rateLimit    from 'express-rate-limit';
 import 'dotenv/config';
 
 import authRoutes      from './routes/auth.js';
+import accountRoutes   from './routes/account.js';
 import companyRoutes   from './routes/companies.js';
 import emissionRoutes  from './routes/emissions.js';
 import reportRoutes    from './routes/reports.js';
@@ -28,7 +29,7 @@ app.use(helmet({
 }));
 
 // CORS - allow configured frontend + common dev origins
-const allowedOrigins = [process.env.FRONTEND_URL, 'https://eco-frontend-eight.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000'].filter(Boolean);
+const allowedOrigins = [process.env.FRONTEND_URL, 'https://eco-frontend-eight.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000','https://ecotrack-nu-seven.vercel.app'].filter(Boolean);
 const corsOptions = {
   origin: (origin, callback) => {
     // allow requests with no origin (curl, server-to-server)
@@ -76,7 +77,6 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 // Environment validation & logging (helps debug Render deploys)
 console.log('🌿 Environment check:');
 console.log(`   FRONTEND_URL: ${process.env.FRONTEND_URL || 'MISSING - using fallback'}`);
-console.log(`   EMAIL_HOST: ${process.env.EMAIL_HOST ? 'SET' : 'MISSING'}`);
 console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 console.log('');
 
@@ -100,6 +100,9 @@ app.options('/api/*', cors(corsOptions));
 // API Routes 
 // Auth
 app.use('/api/auth', authRoutes);
+
+// Account settings
+app.use('/api/account', accountRoutes);
 
 // Companies (CRUD)
 app.use('/api/companies', companyRoutes);
