@@ -2,9 +2,12 @@
 
 // Helper to set CORS headers explicitly (reflect incoming origin when allowed)
 const setCorsHeaders = (req, res) => {
-  const allowed = [process.env.FRONTEND_URL, 'https://eco-frontend-eight.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000'].filter(Boolean);
+  const allowed = [process.env.FRONTEND_URL, 'https://eco-frontend-eight.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://ecotrack-nu-seven.vercel.app']
+    .filter(Boolean)
+    .map((origin) => origin.replace(/\/$/, ''));
   const incoming = req.headers.origin;
-  const origin = incoming && allowed.includes(incoming) ? incoming : (process.env.FRONTEND_URL || 'https://eco-frontend-eight.vercel.app');
+  const configuredOrigin = (process.env.FRONTEND_URL || 'https://eco-frontend-eight.vercel.app').replace(/\/$/, '');
+  const origin = incoming && allowed.includes(incoming) ? incoming : configuredOrigin;
   res.set({
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Credentials': 'true',

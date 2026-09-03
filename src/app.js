@@ -29,7 +29,9 @@ app.use(helmet({
 }));
 
 // CORS - allow configured frontend + common dev origins
-const allowedOrigins = [process.env.FRONTEND_URL, 'https://eco-frontend-eight.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000','https://ecotrack-nu-seven.vercel.app'].filter(Boolean);
+const allowedOrigins = [process.env.FRONTEND_URL, 'https://eco-frontend-eight.vercel.app', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://ecotrack-nu-seven.vercel.app']
+  .filter(Boolean)
+  .map((origin) => origin.replace(/\/$/, ''));
 const corsOptions = {
   origin: (origin, callback) => {
     // allow requests with no origin (curl, server-to-server)
