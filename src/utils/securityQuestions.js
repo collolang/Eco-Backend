@@ -6,8 +6,14 @@ export const SECURITY_QUESTION_CHOICES = [
   'What is the make of your first car?',
 ];
 
+// export function normalizeSecurityAnswer(value) {
+//   return String(value ?? '').trim().toLowerCase();
+// }
 export function normalizeSecurityAnswer(value) {
-  return String(value ?? '').trim().toLowerCase();
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 }
 
 export function isValidSecurityQuestion(question) {
