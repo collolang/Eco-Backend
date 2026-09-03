@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/database.js';
 import { jwtConfig } from '../config/jwt.js';
-import { normalizeSecurityAnswer } from '../utils/securityQuestions.js';
+import { parseSecurityQuestionAnswers } from '../utils/securityQuestions.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
@@ -318,18 +318,30 @@ export const resetPasswordQuestions = async (req, res) => {
       });
     }
 
-    const storedAnswerHashes = user.securityQuestions.map((entry) => entry.answer);
-    const normalizedAnswers = submittedAnswers.map((answer) => normalizeSecurityAnswer(answer));
+    const parsedAnswers = parseSecurityQuestionAnswers(submittedAnswers);
+    const storedQuestions = new Map(user.securityQuestions.map((entry) => [entry.question, entry.answer]));
+
+    if (
+      parsedAnswers.some(({ question, answer }) => !question || !answer) ||
+      new Set(parsedAnswers.map(({ question }) => question)).size !== 3
+    ) {
+      logSecurityQuestionFailure(email);
+      await delaySecurityFailure();
+      return res.status(200).json({
+        success: false,
+        message: 'One or more answers are incorrect.',
+      });
+    }
 
     const correctMatches = await Promise.all(
-      normalizedAnswers.map(async (answer, index) => {
-        const targetHash = storedAnswerHashes[index];
+      parsedAnswers.map(async ({ question, answer }) => {
+        const targetHash = storedQuestions.get(question);
         if (!targetHash) return false;
         return bcrypt.compare(answer, targetHash);
       })
     );
 
-    const allAnswersCorrect = correctMatches.every(Boolean) && normalizedAnswers.length === 3;
+    const allAnswersCorrect = correctMatches.every(Boolean) && parsedAnswers.length === 3;
 
     if (!allAnswersCorrect) {
       logSecurityQuestionFailure(email);
