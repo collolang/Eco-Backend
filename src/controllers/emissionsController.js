@@ -59,14 +59,11 @@ export const createEntry = async (req, res, next) => {
 
     const company = await prisma.company.findFirst({ 
       where: { id: companyId, userId: req.user.id, isActive: true },
-      select: { numberOfEmployees: true, country: true }
+      select: { numberOfEmployees: true }
     });
     if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
 
-    const calculated = calculateEmissions(
-      { electricityKwh, fuelType, fuelQuantity, wasteKg, wasteType, flightKm },
-      company.country
-    );
+    const calculated = calculateEmissions({ electricityKwh, fuelType, fuelQuantity, wasteKg, wasteType, flightKm });
 
     const entry = await prisma.emissionEntry.create({
       data: {
@@ -105,28 +102,29 @@ export const updateEntry = async (req, res, next) => {
     if (!existing) return res.status(404).json({ success: false, message: 'Entry not found' });
 
     const { electricityKwh, fuelType, fuelQuantity, wasteKg, wasteType, flightKm, notes } = req.body;
+    const has = (key) => Object.prototype.hasOwnProperty.call(req.body, key);
 
     const merged = {
-      electricityKwh: electricityKwh ?? existing.electricityKwh,
-      fuelType:       fuelType       ?? existing.fuelType,
-      fuelQuantity:   fuelQuantity   ?? existing.fuelQuantity,
-      wasteKg:        wasteKg        ?? existing.wasteKg,
-      wasteType:      wasteType      ?? existing.wasteType,
-      flightKm:       flightKm       ?? existing.flightKm,
+      electricityKwh: has('electricityKwh') ? electricityKwh : existing.electricityKwh,
+      fuelType:       has('fuelType')       ? fuelType       : existing.fuelType,
+      fuelQuantity:   has('fuelQuantity')   ? fuelQuantity   : existing.fuelQuantity,
+      wasteKg:        has('wasteKg')        ? wasteKg        : existing.wasteKg,
+      wasteType:      has('wasteType')      ? wasteType      : existing.wasteType,
+      flightKm:       has('flightKm')       ? flightKm       : existing.flightKm,
     };
 
-    const calculated = calculateEmissions(merged, existing.company.country);
+    const calculated = calculateEmissions(merged);
 
     const entry = await prisma.emissionEntry.update({
       where: { id: req.params.id },
       data: {
-        electricityKwh: merged.electricityKwh ? parseFloat(merged.electricityKwh) : null,
-        fuelType:       merged.fuelType || null,
-        fuelQuantity:   merged.fuelQuantity ? parseFloat(merged.fuelQuantity) : null,
-        wasteKg:        merged.wasteKg ? parseFloat(merged.wasteKg) : null,
-        wasteType:      merged.wasteType || 'LANDFILL',
-        flightKm:       merged.flightKm ? parseFloat(merged.flightKm) : null,
-        notes:          notes ?? existing.notes,
+        electricityKwh: merged.electricityKwh == null ? null : parseFloat(merged.electricityKwh),
+        fuelType:       merged.fuelType == null ? null : merged.fuelType,
+        fuelQuantity:   merged.fuelQuantity == null ? null : parseFloat(merged.fuelQuantity),
+        wasteKg:        merged.wasteKg == null ? null : parseFloat(merged.wasteKg),
+        wasteType:      merged.wasteType == null ? existing.wasteType : merged.wasteType || existing.wasteType,
+        flightKm:       merged.flightKm == null ? null : parseFloat(merged.flightKm),
+        notes:          notes === undefined ? existing.notes : notes,
         ...calculated,
       },
     });
@@ -293,7 +291,8 @@ export const getEmissionsScore = async (req, res, next) => {
     });
     if (!company) return res.status(403).json({ success: false, message: 'Access denied' });
 
-    // Build filter for emissions entries
+    // Build filter for emissions entries.
+    // No month/year means all-time is intentional here and may be reused elsewhere.
     const where = { companyId, userId: req.user.id };
     if (year) where.year = parseInt(year);
     if (month) where.month = parseInt(month);

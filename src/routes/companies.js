@@ -12,7 +12,6 @@ const companyValidation = [
   body('businessName').trim().notEmpty().withMessage('Business name is required').isLength({ max: 200 }),
   body('numberOfEmployees').optional().isInt({ min: 1 }).withMessage('Employees must be a positive integer'),
   body('contactEmail').optional().isEmail().withMessage('Valid contact email required'),
-  body('country').optional().isString().isLength({ max: 50 }),
   body('yearEstablished').optional().isString().isLength({ max: 4 }),
 ];
 

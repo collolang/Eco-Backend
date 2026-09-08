@@ -13,19 +13,7 @@ export const EMISSION_FACTORS = {
     COAL:     { factor: 2.42,  unit: 'kg'     },
   },
   electricity: {
-    kenya:       0.15,
-    southAfrica: 0.90,
-    nigeria:     0.40,
-    tanzania:    0.35,
-    uganda:      0.10,
-    ethiopia:    0.05,
-    usa:         0.45,
-    uk:          0.25,
-    germany:     0.35,
-    india:       0.70,
-    china:       0.80,
-    global:      0.45,
-    default:     0.40,
+    kenya: 0.15, // TODO confirm against current Kenya Power / IEA grid factor
   },
   waste: {
     LANDFILL:    0.58,
@@ -39,7 +27,20 @@ export const EMISSION_FACTORS = {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
-export function calculateEmissions(entry, country = 'kenya') {
+export function calculateWasteEmissions(wasteKg, wasteType) {
+  if (!wasteKg) return 0;
+  return round2(wasteKg * (EMISSION_FACTORS.waste[wasteType] ?? 0.58));
+}
+
+export function calculateFlightEmissions(flightKm) {
+  if (!flightKm) return 0;
+  const ff = flightKm > EMISSION_FACTORS.flight.threshold
+    ? EMISSION_FACTORS.flight.longHaul
+    : EMISSION_FACTORS.flight.shortHaul;
+  return round2(flightKm * ff);
+}
+
+export function calculateEmissions(entry) {
   let scope1 = 0;
   if (entry.fuelQuantity && entry.fuelType) {
     scope1 = entry.fuelQuantity * (EMISSION_FACTORS.fuel[entry.fuelType]?.factor ?? 2.68);
@@ -47,19 +48,15 @@ export function calculateEmissions(entry, country = 'kenya') {
 
   let scope2 = 0;
   if (entry.electricityKwh) {
-    const gf = EMISSION_FACTORS.electricity[country?.toLowerCase()] ?? EMISSION_FACTORS.electricity.default;
-    scope2 = entry.electricityKwh * gf;
+    scope2 = entry.electricityKwh * EMISSION_FACTORS.electricity.kenya;
   }
 
   let scope3 = 0;
   if (entry.wasteKg && entry.wasteType) {
-    scope3 += entry.wasteKg * (EMISSION_FACTORS.waste[entry.wasteType] ?? 0.58);
+    scope3 += calculateWasteEmissions(entry.wasteKg, entry.wasteType);
   }
   if (entry.flightKm) {
-    const ff = entry.flightKm > EMISSION_FACTORS.flight.threshold
-      ? EMISSION_FACTORS.flight.longHaul
-      : EMISSION_FACTORS.flight.shortHaul;
-    scope3 += entry.flightKm * ff;
+    scope3 += calculateFlightEmissions(entry.flightKm);
   }
 
   return {

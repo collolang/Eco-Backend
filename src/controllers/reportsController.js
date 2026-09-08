@@ -1,6 +1,6 @@
 // src/controllers/reportsController.js
 import prisma from '../config/database.js';
-import { calculateGreenScore, generateRecommendations } from '../utils/carbonCalculator.js';
+import { calculateFlightEmissions, calculateGreenScore, calculateWasteEmissions, generateRecommendations } from '../utils/carbonCalculator.js';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -33,8 +33,8 @@ export const generateReport = async (req, res, next) => {
     const breakdown  = {
       electricity: entry.scope2Emissions,
       fuel:        entry.scope1Emissions,
-      waste:       entry.scope3Emissions * 0.7,
-      flights:     entry.scope3Emissions * 0.3,
+      waste:       calculateWasteEmissions(entry.wasteKg, entry.wasteType),
+      flights:     calculateFlightEmissions(entry.flightKm),
     };
     const recommendations = generateRecommendations(breakdown, greenScore);
 
@@ -45,7 +45,6 @@ export const generateReport = async (req, res, next) => {
         name:      company.businessName,
         industry:  company.industryType,
         location:  company.location,
-        country:   company.country,
         employees: company.numberOfEmployees,
       },
       emissions: {
