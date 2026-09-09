@@ -11,6 +11,7 @@ import accountRoutes   from './routes/account.js';
 import companyRoutes   from './routes/companies.js';
 import emissionRoutes  from './routes/emissions.js';
 import reportRoutes    from './routes/reports.js';
+import adminRoutes     from './routes/admin.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 
 const app = express();
@@ -71,6 +72,7 @@ const authLimiter = rateLimit({
 app.use('/api/', globalLimiter);
 app.use('/api/auth/login',    authLimiter);
 app.use('/api/auth/register', authLimiter);
+app.use('/api/admin',         authLimiter);
 
 //  Body parsing 
 app.use(express.json({ limit: '2mb' }));
@@ -114,6 +116,9 @@ app.use('/api/companies/:companyId/emissions', emissionRoutes);
 
 // Reports — nested under company: /api/companies/:companyId/reports/...
 app.use('/api/companies/:companyId/reports', reportRoutes);
+
+// Admin
+app.use('/api/admin', adminRoutes);
 
 //  404 & Error handlers 
 app.use(notFound);

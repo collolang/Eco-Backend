@@ -93,7 +93,7 @@ function logSecurityQuestionFailure(email) {
 // Register
 export const register = async (req, res, next) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    const { firstName, lastName, email, password, adminInviteCode } = req.body;
     const normalizedEmail = normalizeEmail(email);
 
     if (!(await isPlausibleEmail(normalizedEmail))) {
@@ -108,6 +108,7 @@ export const register = async (req, res, next) => {
     const passwordHash = await bcrypt.hash(password, 12);
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const role = (adminInviteCode && adminInviteCode === process.env.ADMIN_INVITE_CODE) ? 'ADMIN' : 'USER';
 
     const user = await prisma.user.create({
       data: {
@@ -117,6 +118,7 @@ export const register = async (req, res, next) => {
         passwordHash,
         emailVerificationToken: token,
         emailVerificationExpires: expiresAt,
+        role,
       },
       select: { id: true, firstName: true, lastName: true, email: true, role: true, isEmailVerified: true },
     });
@@ -152,7 +154,7 @@ export const login = async (req, res, next) => {
 
     const INVALID = { success: false, message: 'Invalid email or password' };
 
-    if (!user || !user.isActive) return res.status(401).json(INVALID);
+    if (!user) return res.status(401).json(INVALID);
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       const minutes = Math.ceil((user.lockedUntil - Date.now()) / 60000);
@@ -170,6 +172,14 @@ export const login = async (req, res, next) => {
         },
       });
       return res.status(401).json(INVALID);
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'This account has been suspended. Contact support.',
+        code: 'ACCOUNT_SUSPENDED',
+      });
     }
 
     if (!user.isEmailVerified) {

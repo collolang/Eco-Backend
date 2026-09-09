@@ -87,9 +87,9 @@ export const requireCompanyOwner = async (req, res, next) => {
   }
 };
 
-export const requireAdmin = (req, res, next) => {
-  if (req.user?.role !== 'ADMIN') {
-    return res.status(403).json({ success: false, message: 'Admin access required' });
+export function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'ADMIN') {
+    return res.status(403).json({ success: false, message: 'Admin access required.' });
   }
   next();
 };
