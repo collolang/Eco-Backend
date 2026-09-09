@@ -10,6 +10,7 @@ router.use(authenticate);
 
 router.post('/security-questions',
   [
+    body('currentPassword').notEmpty().withMessage('Your current password is required'),
     body('questions').isArray({ min: 3, max: 3 }).withMessage('Exactly 3 security questions are required'),
     body('questions.*.question').custom((value) => {
       if (!SECURITY_QUESTION_CHOICES.includes(value)) {

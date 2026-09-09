@@ -7,6 +7,7 @@ import {
   refreshToken,
   logout,
   getMe,
+  verifyEmail,
   forgotPasswordQuestions,
   resetPasswordQuestions,
 } from '../controllers/authController.js';
@@ -58,6 +59,7 @@ router.post('/reset-password/questions',
   resetPasswordQuestions
 );
 
+router.get('/verify-email', verifyEmail);
 router.post('/logout', logout);
 router.get('/me', authenticate, getMe);
 

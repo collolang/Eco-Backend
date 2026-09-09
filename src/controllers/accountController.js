@@ -6,8 +6,20 @@ import {
   isValidSecurityQuestion,
 } from '../utils/securityQuestions.js';
 
+export async function verifyCurrentPassword(userId, currentPassword) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+  return !!user && bcrypt.compare(currentPassword, user.passwordHash);
+}
+
 export const setupSecurityQuestions = async (req, res, next) => {
   try {
+    const { currentPassword } = req.body;
+    const passwordMatches = await verifyCurrentPassword(req.user.id, currentPassword);
+
+    if (!passwordMatches) {
+      return res.status(401).json({ success: false, message: 'Incorrect password. Re-enter your account password to continue.' });
+    }
+
     const rows = Array.isArray(req.body?.questions) ? req.body.questions : [];
 
     if (rows.length !== 3) {

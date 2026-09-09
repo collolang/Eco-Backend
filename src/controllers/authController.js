@@ -1,8 +1,11 @@
 // src/controllers/authController.js
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/database.js';
 import { jwtConfig } from '../config/jwt.js';
+import { isPlausibleEmail } from '../utils/emailCheck.js';
+import { sendVerificationEmail } from '../utils/mailer.js';
 import { parseSecurityQuestionAnswers } from '../utils/securityQuestions.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -91,39 +94,46 @@ function logSecurityQuestionFailure(email) {
 export const register = async (req, res, next) => {
   try {
     const { firstName, lastName, email, password } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
-    const existing = await prisma.user.findUnique({ where: { email: normalizeEmail(email) } });
+    if (!(await isPlausibleEmail(normalizedEmail))) {
+      return res.status(400).json({ success: false, message: 'Please enter a real, deliverable email address.' });
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
       return res.status(409).json({ success: false, message: 'An account with this email already exists' });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
     const user = await prisma.user.create({
       data: {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        email: normalizeEmail(email),
+        email: normalizedEmail,
         passwordHash,
+        emailVerificationToken: token,
+        emailVerificationExpires: expiresAt,
       },
-      select: { id: true, firstName: true, lastName: true, email: true, role: true },
+      select: { id: true, firstName: true, lastName: true, email: true, role: true, isEmailVerified: true },
     });
 
-    const accessToken = generateAccessToken(user.id, user.role);
-    const refreshToken = generateRefreshToken(user.id);
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt: getRefreshExpiry(),
-        userAgent: req.headers['user-agent'],
-        ipAddress: req.ip,
-      },
-    });
+    try {
+      await sendVerificationEmail(email, token);
+    } catch (error) {
+      console.warn('[MAILER] Verification email failed to send:', {
+        email: normalizedEmail,
+        error: error.message,
+      });
+    }
 
     res.status(201).json({
       success: true,
-      message: 'Account created successfully',
-      data: { user, accessToken, refreshToken },
+      message: 'Account created. Please check your email to verify your address before logging in.',
+      data: { user },
     });
   } catch (error) {
     next(error);
@@ -160,6 +170,14 @@ export const login = async (req, res, next) => {
         },
       });
       return res.status(401).json(INVALID);
+    }
+
+    if (!user.isEmailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email before logging in.',
+        code: 'EMAIL_NOT_VERIFIED',
+      });
     }
 
     await prisma.user.update({
@@ -228,6 +246,41 @@ export const refreshToken = async (req, res, next) => {
     });
 
     res.json({ success: true, data: { accessToken: newAccess, refreshToken: newRefresh } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Verify email
+export const verifyEmail = async (req, res, next) => {
+  try {
+    const { token } = req.query;
+
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ success: false, message: 'Invalid or expired verification link' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        emailVerificationToken: token,
+        emailVerificationExpires: { gt: new Date() },
+      },
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired verification link' });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        isEmailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationExpires: null,
+      },
+    });
+
+    return res.json({ success: true, message: 'Email verified successfully.' });
   } catch (error) {
     next(error);
   }
@@ -388,6 +441,7 @@ export const getMe = async (req, res, next) => {
         lastName: true,
         email: true,
         role: true,
+        isEmailVerified: true,
         createdAt: true,
         hasSecurityQuestions: true,
         companies: { where: { isActive: true }, orderBy: { createdAt: 'asc' } },
