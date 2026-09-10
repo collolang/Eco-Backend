@@ -18,3 +18,11 @@ test('backend CORS allow-lists include the ecotrack hosted frontend domain used 
   assert.match(appSource, /https:\/\/ecotrack\.ramodiasnetworksolutions\.com/);
   assert.match(errorSource, /https:\/\/ecotrack\.ramodiasnetworksolutions\.com/);
 });
+
+test('auth route exposes a resend-verification route and controller hook', () => {
+  const routeSource = readFileSync(path.join(root, 'src/routes/auth.js'), 'utf8');
+  const controllerSource = readFileSync(path.join(root, 'src/controllers/authController.js'), 'utf8');
+
+  assert.match(routeSource, /router\.post\('\/resend-verification'/);
+  assert.match(controllerSource, /export const resendVerification/);
+});

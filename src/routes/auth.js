@@ -8,6 +8,7 @@ import {
   logout,
   getMe,
   verifyEmail,
+  resendVerification,
   forgotPasswordQuestions,
   resetPasswordQuestions,
 } from '../controllers/authController.js';
@@ -57,6 +58,14 @@ router.post('/reset-password/questions',
   ],
   validate,
   resetPasswordQuestions
+);
+
+router.post('/resend-verification',
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  ],
+  validate,
+  resendVerification
 );
 
 router.get('/verify-email', verifyEmail);

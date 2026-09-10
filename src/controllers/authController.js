@@ -296,6 +296,68 @@ export const verifyEmail = async (req, res, next) => {
   }
 };
 
+// Resend verification email
+export const resendVerification = async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        isEmailVerified: true,
+        emailVerificationToken: true,
+        emailVerificationExpires: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists for that email, a new verification link has been sent.',
+      });
+    }
+
+    if (user.isEmailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'This email address is already verified.',
+      });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerificationToken: token,
+        emailVerificationExpires: expiresAt,
+      },
+    });
+
+    try {
+      await sendVerificationEmail(email, token);
+    } catch (error) {
+      console.warn('[MAILER] Verification email resend failed:', {
+        email,
+        error: error.message,
+      });
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to send a verification email right now.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Verification email sent successfully.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Logout
 export const logout = async (_req, res, next) => {
   try {
